@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 type RoomState = 'normal' | 'watch' | 'alert' | 'acknowledged' | 'escalated';
 type EventKind = 'fall' | 'bedExit' | 'longLie' | 'falseAlert' | 'managerReview';
+type ManualStage = 'idle' | 'running' | 'alertLive' | 'acknowledged' | 'escalated' | 'closed';
 
 type Room = {
   id: string;
@@ -341,6 +342,7 @@ export default function Page() {
   const [showControls, setShowControls] = useState<boolean>(true);
   const [presenterNote, setPresenterNote] = useState<string>('Ready for demonstration.');
   const [clock, setClock] = useState<string>(currentClock());
+  const [manualStage, setManualStage] = useState<ManualStage>('idle');
   const timeoutsRef = useRef<number[]>([]);
 
   useEffect(() => {
@@ -371,6 +373,7 @@ export default function Page() {
     setSummary(INITIAL_SUMMARY);
     setTimeline(INITIAL_TIMELINE);
     setRunningScenarioId(null);
+    setManualStage('idle');
     setPresenterNote('Reset complete. Ready for next scenario.');
   }
 
@@ -447,9 +450,13 @@ export default function Page() {
   function runScenario(scenario: Scenario) {
     resetDemo();
     setRunningScenarioId(scenario.id);
+    setManualStage('running');
     setPresenterNote(`Running scenario: ${scenario.title}`);
 
+    let cumulativeDelay = 0;
+
     scenario.steps.forEach((step, index) => {
+      cumulativeDelay += step.delayMs;
       const timeoutId = window.setTimeout(() => {
         setPresenterNote(step.label);
         step.actions.forEach((action) => applyAction(action));
@@ -457,12 +464,15 @@ export default function Page() {
         const isFinal = index === scenario.steps.length - 1;
         if (isFinal) {
           setRunningScenarioId(null);
-          const scenarioAlert = scenario.eventKind === 'managerReview' ? null : scenario.eventKind;
-          if (scenarioAlert) {
-            setPresenterNote('Live alert raised. Use the action buttons to walk through acknowledgement, escalation, or closure manually.');
+          if (scenario.eventKind === 'managerReview') {
+            setManualStage('closed');
+            setPresenterNote('Manager review updated. Run another scenario or reset the demo.');
+          } else {
+            setManualStage('alertLive');
+            setPresenterNote('Live alert raised. Nothing else will happen until you tap Acknowledge, Escalate, or Resolve.');
           }
         }
-      }, step.delayMs);
+      }, cumulativeDelay);
 
       timeoutsRef.current.push(timeoutId);
     });
@@ -490,6 +500,7 @@ export default function Page() {
       },
     });
     setSummary((previous) => ({ ...previous, averageResponse: '01:24', acknowledgedWithin2Min: '90%' }));
+    setManualStage('acknowledged');
     setPresenterNote(nextActionHint({ ...activeAlert, status: 'acknowledged' }));
   }
 
@@ -514,6 +525,7 @@ export default function Page() {
         note: 'Escalation triggered during demo.',
       },
     });
+    setManualStage('escalated');
     setPresenterNote(nextActionHint({ ...activeAlert, status: 'escalated' }));
   }
 
@@ -542,6 +554,7 @@ export default function Page() {
       unresolved: Math.max(previous.unresolved - 1, 0),
       falseDismissed: wasFalse ? previous.falseDismissed + 1 : previous.falseDismissed,
     }));
+    setManualStage('closed');
     setPresenterNote(nextActionHint({ ...activeAlert, status: nextStatus }));
     window.setTimeout(() => setActiveAlert(null), 400);
   }
@@ -616,9 +629,9 @@ export default function Page() {
               <div className="noteBox">{activeAlert.note}</div>
 
               <div className="buttonRow">
-                <button className="primaryButton" onClick={handleAcknowledge}>Acknowledge</button>
-                <button className="secondaryButton" onClick={handleEscalate}>Escalate</button>
-                <button className="secondaryButton" onClick={handleResolve}>{activeAlert.eventKind === 'falseAlert' ? 'Dismiss' : 'Resolve'}</button>
+                <button className="primaryButton" onClick={handleAcknowledge} disabled={manualStage !== 'alertLive'}>Acknowledge</button>
+                <button className="secondaryButton" onClick={handleEscalate} disabled={manualStage === 'closed' || manualStage === 'running'}>Escalate</button>
+                <button className="secondaryButton" onClick={handleResolve} disabled={manualStage === 'running'}>{activeAlert.eventKind === 'falseAlert' ? 'Dismiss' : 'Resolve'}</button>
               </div>
             </div>
           ) : (
@@ -631,6 +644,7 @@ export default function Page() {
           <div className="presenterStrip">
             <span className="eyebrow">Presenter note</span>
             <p>{presenterNote}</p>
+            <div className="scenarioStage">Manual stage: {capitalize(manualStage)}</div>
           </div>
         </section>
       </section>
@@ -665,7 +679,7 @@ export default function Page() {
               <div className="eyebrow">Scenario controls</div>
               <h2>Tap to simulate a workflow</h2>
             </div>
-            <div className="panelBadge">Local playback</div>
+            <div className="panelBadge">Local playback · manual branching</div>
           </div>
 
           {showControls ? (
