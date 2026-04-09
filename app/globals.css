@@ -498,3 +498,10 @@ button, select {
     justify-content: flex-start;
   }
 }
+
+.scenarioStage {
+  margin-top: 10px;
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
