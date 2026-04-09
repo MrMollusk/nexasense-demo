@@ -39,21 +39,6 @@ type IncidentLogEntry = {
   note: string;
 };
 
-type StepAction =
-  | { type: 'roomState'; roomId: string; state: RoomState; lastEvent: string }
-  | { type: 'raiseAlert'; alert: Omit<Alert, 'status' | 'since'> & { status?: Alert['status']; since?: string } }
-  | { type: 'updateAlert'; status: Alert['status']; note?: string; confidence?: number }
-  | { type: 'timeline'; entry: Omit<IncidentLogEntry, 'id' | 'timestamp'> & { status?: string; timestamp?: string } }
-  | { type: 'managerFlash'; message: string }
-  | { type: 'setSummary'; patch: Partial<SummaryState> }
-  | { type: 'clearAlert' };
-
-type ScenarioStep = {
-  delayMs: number;
-  label: string;
-  actions: StepAction[];
-};
-
 type Scenario = {
   id: string;
   title: string;
@@ -61,7 +46,9 @@ type Scenario = {
   description: string;
   roomId: string;
   eventKind: EventKind;
-  steps: ScenarioStep[];
+  watchDelayMs?: number;
+  watchLabel?: string;
+  alert: Omit<Alert, 'status' | 'since'>;
 };
 
 type SummaryState = {
@@ -71,6 +58,8 @@ type SummaryState = {
   averageResponse: string;
   acknowledgedWithin2Min: string;
 };
+
+const DEMO_VERSION = 'manual-v3';
 
 const INITIAL_SUMMARY: SummaryState = {
   alertsToday: 7,
@@ -140,167 +129,100 @@ const SCENARIOS: Scenario[] = [
     id: 'fall-105',
     title: 'Resident fall detected',
     subtitle: 'Room 105 · Catherine Doyle',
-    description: 'High-confidence fall alert. The script stops at the live event so you can manually acknowledge, escalate, and resolve.',
+    description: 'Runs to the live alert, then stops. The alert will not acknowledge, escalate, or resolve until you tap.',
     roomId: '105',
     eventKind: 'fall',
-    steps: [
-      {
-        delayMs: 700,
-        label: 'Room enters watch state',
-        actions: [
-          { type: 'roomState', roomId: '105', state: 'watch', lastEvent: 'Unusual movement pattern detected' },
-          { type: 'managerFlash', message: 'Room 105 movement pattern changed' },
-        ],
-      },
-      {
-        delayMs: 1800,
-        label: 'High-confidence alert generated',
-        actions: [
-          {
-            type: 'raiseAlert',
-            alert: {
-              id: 'fall-105',
-              roomId: '105',
-              roomLabel: 'Room 105',
-              resident: 'Catherine Doyle',
-              eventKind: 'fall',
-              title: 'Possible fall detected',
-              confidence: 91,
-              note: 'Rapid posture change followed by floor-level persistence.',
-              urgency: 'critical',
-            },
-          },
-          { type: 'roomState', roomId: '105', state: 'alert', lastEvent: 'Possible fall detected' },
-          { type: 'setSummary', patch: { alertsToday: 8, unresolved: 1 } },
-        ],
-      },
-    ],
+    watchDelayMs: 900,
+    watchLabel: 'Unusual movement pattern detected',
+    alert: {
+      id: 'fall-105',
+      roomId: '105',
+      roomLabel: 'Room 105',
+      resident: 'Catherine Doyle',
+      eventKind: 'fall',
+      title: 'Possible fall detected',
+      confidence: 91,
+      note: 'Rapid posture change followed by floor-level persistence.',
+      urgency: 'critical',
+    },
   },
   {
     id: 'bed-exit-102',
     title: 'Bed exit at night',
     subtitle: 'Room 102 · Patrick Byrne',
-    description: 'Shows an exception-based targeted check. The alert stays live until you decide what happens next.',
+    description: 'Shows an exception-based targeted check. Alert remains live until you choose the next step.',
     roomId: '102',
     eventKind: 'bedExit',
-    steps: [
-      {
-        delayMs: 900,
-        label: 'Bed exit detected',
-        actions: [
-          { type: 'roomState', roomId: '102', state: 'watch', lastEvent: 'Bed exit pattern detected' },
-          {
-            type: 'raiseAlert',
-            alert: {
-              id: 'bed-exit-102',
-              roomId: '102',
-              roomLabel: 'Room 102',
-              resident: 'Patrick Byrne',
-              eventKind: 'bedExit',
-              title: 'Bed exit at night',
-              confidence: 87,
-              note: 'Resident exited bed and remained upright for more than 12 seconds.',
-              urgency: 'high',
-            },
-          },
-          { type: 'roomState', roomId: '102', state: 'alert', lastEvent: 'Bed exit at night' },
-          { type: 'setSummary', patch: { alertsToday: 8, unresolved: 1 } },
-        ],
-      },
-    ],
+    alert: {
+      id: 'bed-exit-102',
+      roomId: '102',
+      roomLabel: 'Room 102',
+      resident: 'Patrick Byrne',
+      eventKind: 'bedExit',
+      title: 'Bed exit at night',
+      confidence: 87,
+      note: 'Resident exited bed and remained upright for more than 12 seconds.',
+      urgency: 'high',
+    },
   },
   {
     id: 'long-lie-109',
     title: 'Long-lie / no recovery',
     subtitle: 'Room 109 · Tom Duffy',
-    description: 'Persistence-based alert. You choose whether staff acknowledge promptly or the response escalates.',
+    description: 'Persistence-based alert. You decide if it is acknowledged, escalated, or resolved.',
     roomId: '109',
     eventKind: 'longLie',
-    steps: [
-      {
-        delayMs: 800,
-        label: 'Persistent floor-level posture detected',
-        actions: [
-          { type: 'roomState', roomId: '109', state: 'watch', lastEvent: 'Floor-level posture persists beyond threshold' },
-          {
-            type: 'raiseAlert',
-            alert: {
-              id: 'long-lie-109',
-              roomId: '109',
-              roomLabel: 'Room 109',
-              resident: 'Tom Duffy',
-              eventKind: 'longLie',
-              title: 'Long-lie risk detected',
-              confidence: 89,
-              note: 'No recovery movement detected after 90 seconds.',
-              urgency: 'critical',
-            },
-          },
-          { type: 'roomState', roomId: '109', state: 'alert', lastEvent: 'Long-lie risk detected' },
-          { type: 'setSummary', patch: { alertsToday: 8, unresolved: 1 } },
-        ],
-      },
-    ],
+    watchDelayMs: 900,
+    watchLabel: 'Floor-level posture persists beyond threshold',
+    alert: {
+      id: 'long-lie-109',
+      roomId: '109',
+      roomLabel: 'Room 109',
+      resident: 'Tom Duffy',
+      eventKind: 'longLie',
+      title: 'Long-lie risk detected',
+      confidence: 89,
+      note: 'No recovery movement detected after 90 seconds.',
+      urgency: 'critical',
+    },
   },
   {
     id: 'false-alert-111',
     title: 'False alert dismissal',
     subtitle: 'Room 111 · Michael Quinn',
-    description: 'Medium-confidence alert that you can acknowledge briefly and dismiss without escalating the whole chain.',
+    description: 'Medium-confidence alert that you can acknowledge briefly and dismiss without escalation.',
     roomId: '111',
     eventKind: 'falseAlert',
-    steps: [
-      {
-        delayMs: 900,
-        label: 'Medium-confidence alert generated',
-        actions: [
-          { type: 'roomState', roomId: '111', state: 'alert', lastEvent: 'Possible fall signal detected' },
-          {
-            type: 'raiseAlert',
-            alert: {
-              id: 'false-alert-111',
-              roomId: '111',
-              roomLabel: 'Room 111',
-              resident: 'Michael Quinn',
-              eventKind: 'falseAlert',
-              title: 'Possible fall signal',
-              confidence: 63,
-              note: 'Resident movement pattern requires quick review.',
-              urgency: 'medium',
-            },
-          },
-          { type: 'setSummary', patch: { alertsToday: 8, unresolved: 1 } },
-        ],
-      },
-    ],
+    alert: {
+      id: 'false-alert-111',
+      roomId: '111',
+      roomLabel: 'Room 111',
+      resident: 'Michael Quinn',
+      eventKind: 'falseAlert',
+      title: 'Possible fall signal',
+      confidence: 63,
+      note: 'Resident movement pattern requires quick review.',
+      urgency: 'medium',
+    },
   },
   {
     id: 'manager-review',
     title: 'Manager next-morning review',
     subtitle: 'Shift handover summary',
-    description: 'Highlights manager-facing review and incident visibility rather than only frontline alerts.',
+    description: 'Manager-facing review screen update.',
     roomId: '108',
     eventKind: 'managerReview',
-    steps: [
-      {
-        delayMs: 1000,
-        label: 'Manager summary refreshed',
-        actions: [
-          { type: 'managerFlash', message: 'Manager summary refreshed for morning handover' },
-          { type: 'setSummary', patch: { alertsToday: 9, unresolved: 0, averageResponse: '01:31', acknowledgedWithin2Min: '89%' } },
-          {
-            type: 'timeline',
-            entry: {
-              roomLabel: 'Wing A',
-              resident: 'Shift summary',
-              title: 'Morning manager review',
-              status: 'Review',
-              note: 'Incident queue, response times, and unresolved items reviewed in one place.',
-            },
-          },
-        ],
-      },
-    ],
+    alert: {
+      id: 'manager-review',
+      roomId: '108',
+      roomLabel: 'Wing A',
+      resident: 'Shift summary',
+      eventKind: 'managerReview',
+      title: 'Morning manager review',
+      confidence: 100,
+      note: 'Incident queue, response times, and unresolved items reviewed in one place.',
+      urgency: 'medium',
+    },
   },
 ];
 
@@ -317,19 +239,10 @@ function formatEventKind(kind: EventKind): string {
 
 function nextActionHint(alert: Alert | null): string {
   if (!alert) return 'Ready for demonstration.';
-  if (alert.status === 'active') {
-    return 'Live alert raised. Tap Acknowledge, Escalate, or Resolve to walk through the response path manually.';
-  }
-  if (alert.status === 'acknowledged') {
-    return 'Alert acknowledged. You can now escalate for nurse review or resolve it.';
-  }
-  if (alert.status === 'escalated') {
-    return 'Escalated path shown. Resolve when you want to close the event and leave it in the timeline.';
-  }
-  if (alert.status === 'dismissed' || alert.status === 'resolved') {
-    return 'Event closed. Reset the demo or run another scenario.';
-  }
-  return 'Ready for demonstration.';
+  if (alert.status === 'active') return 'Live alert raised. Nothing else will happen until you tap a button.';
+  if (alert.status === 'acknowledged') return 'Alert acknowledged. You can now escalate or resolve it.';
+  if (alert.status === 'escalated') return 'Alert escalated. Resolve or dismiss when ready.';
+  return 'Event closed. Reset the demo or run another scenario.';
 }
 
 export default function Page() {
@@ -346,7 +259,7 @@ export default function Page() {
   const timeoutsRef = useRef<number[]>([]);
 
   useEffect(() => {
-    const interval = window.setInterval(() => setClock(currentClock()), 1000 * 20);
+    const interval = window.setInterval(() => setClock(currentClock()), 20000);
     return () => window.clearInterval(interval);
   }, []);
 
@@ -374,202 +287,115 @@ export default function Page() {
     setTimeline(INITIAL_TIMELINE);
     setRunningScenarioId(null);
     setManualStage('idle');
-    setPresenterNote('Reset complete. Ready for next scenario.');
+    setPresenterNote(`Reset complete. ${DEMO_VERSION}`);
   }
 
-  function applyAction(action: StepAction) {
-    switch (action.type) {
-      case 'roomState': {
-        setRooms((previous) =>
-          previous.map((room) =>
-            room.id === action.roomId
-              ? {
-                  ...room,
-                  state: action.state,
-                  lastEvent: action.lastEvent,
-                  updatedAt: currentClock(),
-                }
-              : room,
-          ),
-        );
-        break;
-      }
-      case 'raiseAlert': {
-        setActiveAlert({
-          ...action.alert,
-          status: action.alert.status ?? 'active',
-          since: action.alert.since ?? currentClock(),
-        });
-        break;
-      }
-      case 'updateAlert': {
-        setActiveAlert((previous) =>
-          previous
-            ? {
-                ...previous,
-                status: action.status,
-                note: action.note ?? previous.note,
-                confidence: action.confidence ?? previous.confidence,
-              }
-            : previous,
-        );
-        break;
-      }
-      case 'timeline': {
-        setTimeline((previous) => [
-          {
-            id: `${Date.now()}-${Math.random()}`,
-            timestamp: action.entry.timestamp ?? currentClock(),
-            roomLabel: action.entry.roomLabel,
-            resident: action.entry.resident,
-            title: action.entry.title,
-            status: action.entry.status ?? 'Logged',
-            note: action.entry.note,
-          },
-          ...previous,
-        ]);
-        break;
-      }
-      case 'managerFlash': {
-        setPresenterNote(action.message);
-        break;
-      }
-      case 'setSummary': {
-        setSummary((previous) => ({ ...previous, ...action.patch }));
-        break;
-      }
-      case 'clearAlert': {
-        setActiveAlert(null);
-        break;
-      }
-      default:
-        break;
-    }
+  function updateRoom(roomId: string, state: RoomState, lastEvent: string) {
+    setRooms((previous) =>
+      previous.map((room) =>
+        room.id === roomId
+          ? { ...room, state, lastEvent, updatedAt: currentClock() }
+          : room,
+      ),
+    );
+  }
+
+  function addTimeline(roomLabel: string, resident: string, title: string, status: string, note: string) {
+    setTimeline((previous) => [
+      {
+        id: `${Date.now()}-${Math.random()}`,
+        timestamp: currentClock(),
+        roomLabel,
+        resident,
+        title,
+        status,
+        note,
+      },
+      ...previous,
+    ]);
+  }
+
+  function launchAlert(scenario: Scenario) {
+    setActiveAlert({ ...scenario.alert, status: 'active', since: currentClock() });
+    updateRoom(scenario.roomId, 'alert', scenario.alert.title);
+    setSummary((previous) => ({ ...previous, alertsToday: previous.alertsToday + 1, unresolved: previous.unresolved + 1 }));
+    setRunningScenarioId(null);
+    setManualStage('alertLive');
+    setPresenterNote(`LIVE ALERT · ${scenario.title} · ${DEMO_VERSION}`);
   }
 
   function runScenario(scenario: Scenario) {
     resetDemo();
     setRunningScenarioId(scenario.id);
     setManualStage('running');
-    setPresenterNote(`Running scenario: ${scenario.title}`);
+    setPresenterNote(`Running scenario: ${scenario.title} · ${DEMO_VERSION}`);
 
-    let cumulativeDelay = 0;
-
-    scenario.steps.forEach((step, index) => {
-      cumulativeDelay += step.delayMs;
+    if (scenario.eventKind === 'managerReview') {
       const timeoutId = window.setTimeout(() => {
-        setPresenterNote(step.label);
-        step.actions.forEach((action) => applyAction(action));
-
-        const isFinal = index === scenario.steps.length - 1;
-        if (isFinal) {
-          setRunningScenarioId(null);
-          if (scenario.eventKind === 'managerReview') {
-            setManualStage('closed');
-            setPresenterNote('Manager review updated. Run another scenario or reset the demo.');
-          } else {
-            setManualStage('alertLive');
-            setPresenterNote('Live alert raised. Nothing else will happen until you tap Acknowledge, Escalate, or Resolve.');
-          }
-        }
-      }, cumulativeDelay);
-
+        setSummary((previous) => ({ ...previous, alertsToday: 9, unresolved: 0, averageResponse: '01:31', acknowledgedWithin2Min: '89%' }));
+        addTimeline('Wing A', 'Shift summary', 'Morning manager review', 'Review', 'Incident queue, response times, and unresolved items reviewed in one place.');
+        setRunningScenarioId(null);
+        setManualStage('closed');
+        setPresenterNote(`Manager review updated · ${DEMO_VERSION}`);
+      }, 900);
       timeoutsRef.current.push(timeoutId);
-    });
+      return;
+    }
+
+    if (scenario.watchDelayMs && scenario.watchLabel) {
+      updateRoom(scenario.roomId, 'watch', scenario.watchLabel);
+      const timeoutId = window.setTimeout(() => launchAlert(scenario), scenario.watchDelayMs);
+      timeoutsRef.current.push(timeoutId);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => launchAlert(scenario), 800);
+    timeoutsRef.current.push(timeoutId);
   }
 
   function handleAcknowledge() {
-    if (!activeAlert || activeAlert.status === 'acknowledged' || activeAlert.status === 'resolved' || activeAlert.status === 'dismissed') return;
-    applyAction({
-      type: 'updateAlert',
-      status: 'acknowledged',
-      note:
-        activeAlert.eventKind === 'falseAlert'
-          ? 'Reviewed by staff. Quick check underway before dismissal decision.'
-          : 'Healthcare assistant acknowledged and is attending the room now.',
-    });
-    applyAction({ type: 'roomState', roomId: activeAlert.roomId, state: 'acknowledged', lastEvent: 'Acknowledged manually' });
-    applyAction({
-      type: 'timeline',
-      entry: {
-        roomLabel: activeAlert.roomLabel,
-        resident: activeAlert.resident,
-        title: `${activeAlert.title} acknowledged`,
-        status: 'Acknowledged',
-        note: 'Manual acknowledgement during demo.',
-      },
-    });
+    if (!activeAlert || manualStage !== 'alertLive') return;
+    setActiveAlert((previous) => previous ? { ...previous, status: 'acknowledged', note: previous.eventKind === 'falseAlert' ? 'Reviewed by staff. Quick check underway before dismissal decision.' : 'Healthcare assistant acknowledged and is attending the room now.' } : previous);
+    updateRoom(activeAlert.roomId, 'acknowledged', 'Acknowledged manually');
+    addTimeline(activeAlert.roomLabel, activeAlert.resident, `${activeAlert.title} acknowledged`, 'Acknowledged', 'Manual acknowledgement during demo.');
     setSummary((previous) => ({ ...previous, averageResponse: '01:24', acknowledgedWithin2Min: '90%' }));
     setManualStage('acknowledged');
-    setPresenterNote(nextActionHint({ ...activeAlert, status: 'acknowledged' }));
+    setPresenterNote(`Acknowledged manually · ${DEMO_VERSION}`);
   }
 
   function handleEscalate() {
-    if (!activeAlert || activeAlert.status === 'resolved' || activeAlert.status === 'dismissed' || activeAlert.status === 'escalated') return;
-    applyAction({
-      type: 'updateAlert',
-      status: 'escalated',
-      note:
-        activeAlert.eventKind === 'longLie'
-          ? 'Escalated for urgent nurse review after persistent floor-level posture.'
-          : 'Escalated for nurse assessment and incident review.',
-    });
-    applyAction({ type: 'roomState', roomId: activeAlert.roomId, state: 'escalated', lastEvent: 'Escalated manually' });
-    applyAction({
-      type: 'timeline',
-      entry: {
-        roomLabel: activeAlert.roomLabel,
-        resident: activeAlert.resident,
-        title: `${activeAlert.title} escalated`,
-        status: 'Escalated',
-        note: 'Escalation triggered during demo.',
-      },
-    });
+    if (!activeAlert || (manualStage !== 'alertLive' && manualStage !== 'acknowledged')) return;
+    setActiveAlert((previous) => previous ? { ...previous, status: 'escalated', note: previous.eventKind === 'longLie' ? 'Escalated for urgent nurse review after persistent floor-level posture.' : 'Escalated for nurse assessment and incident review.' } : previous);
+    updateRoom(activeAlert.roomId, 'escalated', 'Escalated manually');
+    addTimeline(activeAlert.roomLabel, activeAlert.resident, `${activeAlert.title} escalated`, 'Escalated', 'Escalation triggered during demo.');
     setManualStage('escalated');
-    setPresenterNote(nextActionHint({ ...activeAlert, status: 'escalated' }));
+    setPresenterNote(`Escalated manually · ${DEMO_VERSION}`);
   }
 
   function handleResolve() {
-    if (!activeAlert || activeAlert.status === 'resolved' || activeAlert.status === 'dismissed') return;
+    if (!activeAlert || (manualStage !== 'alertLive' && manualStage !== 'acknowledged' && manualStage !== 'escalated')) return;
     const wasFalse = activeAlert.eventKind === 'falseAlert';
     const nextStatus = wasFalse ? 'dismissed' : 'resolved';
-    applyAction({
-      type: 'updateAlert',
-      status: nextStatus,
-      note: wasFalse ? 'Reviewed and dismissed. Resident was repositioning safely.' : 'Resolved and retained in the incident timeline for handover.',
-    });
-    applyAction({ type: 'roomState', roomId: activeAlert.roomId, state: 'normal', lastEvent: wasFalse ? 'False alert dismissed' : 'Resolved and logged for handover' });
-    applyAction({
-      type: 'timeline',
-      entry: {
-        roomLabel: activeAlert.roomLabel,
-        resident: activeAlert.resident,
-        title: wasFalse ? 'False alert dismissed' : `${activeAlert.title} resolved`,
-        status: wasFalse ? 'Dismissed' : 'Resolved',
-        note: wasFalse ? 'No escalation required. Logged for later alert-quality review.' : 'Event closed manually during demo.',
-      },
-    });
-    setSummary((previous) => ({
-      ...previous,
-      unresolved: Math.max(previous.unresolved - 1, 0),
-      falseDismissed: wasFalse ? previous.falseDismissed + 1 : previous.falseDismissed,
-    }));
+    setActiveAlert((previous) => previous ? { ...previous, status: nextStatus, note: wasFalse ? 'Reviewed and dismissed. Resident was repositioning safely.' : 'Resolved and retained in the incident timeline for handover.' } : previous);
+    updateRoom(activeAlert.roomId, 'normal', wasFalse ? 'False alert dismissed' : 'Resolved and logged for handover');
+    addTimeline(activeAlert.roomLabel, activeAlert.resident, wasFalse ? 'False alert dismissed' : `${activeAlert.title} resolved`, wasFalse ? 'Dismissed' : 'Resolved', wasFalse ? 'No escalation required. Logged for later alert-quality review.' : 'Event closed manually during demo.');
+    setSummary((previous) => ({ ...previous, unresolved: Math.max(previous.unresolved - 1, 0), falseDismissed: wasFalse ? previous.falseDismissed + 1 : previous.falseDismissed }));
     setManualStage('closed');
-    setPresenterNote(nextActionHint({ ...activeAlert, status: nextStatus }));
-    window.setTimeout(() => setActiveAlert(null), 400);
+    setPresenterNote(`${wasFalse ? 'Dismissed' : 'Resolved'} manually · ${DEMO_VERSION}`);
   }
 
   return (
     <main className="appShell">
       <section className="topBar">
         <div>
-          <div className="eyebrow">NexaSense demonstration</div>
+          <div className="eyebrow">NexaSense demonstration · {DEMO_VERSION}</div>
           <h1>Exception-based care-home monitoring</h1>
           <p className="muted">iPad-friendly scenario demo for operational and clinical conversations.</p>
         </div>
         <div className="topBarRight">
           <div className="statusPill online">System operational</div>
           <div className="statusPill">API / worker / stream split</div>
+          <div className="statusPill">Postgres truth · Redis ephemeral · object storage bytes</div>
           <div className="clockPill">{clock}</div>
           <button className="ghostButton" onClick={() => setShowControls((value) => !value)}>
             {showControls ? 'Hide controls' : 'Show controls'}
@@ -630,8 +456,8 @@ export default function Page() {
 
               <div className="buttonRow">
                 <button className="primaryButton" onClick={handleAcknowledge} disabled={manualStage !== 'alertLive'}>Acknowledge</button>
-                <button className="secondaryButton" onClick={handleEscalate} disabled={manualStage === 'closed' || manualStage === 'running'}>Escalate</button>
-                <button className="secondaryButton" onClick={handleResolve} disabled={manualStage === 'running'}>{activeAlert.eventKind === 'falseAlert' ? 'Dismiss' : 'Resolve'}</button>
+                <button className="secondaryButton" onClick={handleEscalate} disabled={manualStage !== 'alertLive' && manualStage !== 'acknowledged'}>Escalate</button>
+                <button className="secondaryButton" onClick={handleResolve} disabled={manualStage !== 'alertLive' && manualStage !== 'acknowledged' && manualStage !== 'escalated'}>{activeAlert.eventKind === 'falseAlert' ? 'Dismiss' : 'Resolve'}</button>
               </div>
             </div>
           ) : (
@@ -645,6 +471,7 @@ export default function Page() {
             <span className="eyebrow">Presenter note</span>
             <p>{presenterNote}</p>
             <div className="scenarioStage">Manual stage: {capitalize(manualStage)}</div>
+            <div className="scenarioStage">Build: {DEMO_VERSION}</div>
           </div>
         </section>
       </section>
